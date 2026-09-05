@@ -81,7 +81,7 @@ VoiceGuard continuously ingests live microphone audio via binary WebSocket strea
 
 ## System Architecture
 
-```
+```text
                                     ┌─────────────────────────────────────────────────────────────┐
                                     │                     USER BROWSER / CLIENT                   │
                                     │                                                             │
@@ -112,13 +112,13 @@ VoiceGuard continuously ingests live microphone audio via binary WebSocket strea
 ### End-to-End Component Flow
 ```mermaid
 flowchart LR
-    A[Browser Mic Audio] -->|400ms Opus chunks| B[WebSocket /ws/audio]
-    B --> C[SlidingWindowBuffer]
-    C -->|Window Full: 10 chunks| D[ML Interface Inference]
-    D -->|Spoof, Speaker, Prosody| E[Risk Fusion Engine]
-    E -->|Risk Score 0-100 & Level| B
-    B -->|Live JSON Telemetry| F[React Threat Dashboard]
-    F -->|Score >= 70| G[Critical Alert & Verification Modal]
+    A["Browser Mic Audio"] -->|"400ms Opus chunks"| B["WebSocket (/ws/audio)"]
+    B --> C["Sliding Window Buffer"]
+    C -->|"Window Full: 10 chunks"| D["ML Interface Inference"]
+    D -->|"Spoof, Speaker, Prosody"| E["Risk Fusion Engine"]
+    E -->|"Risk Score (0-100) & Level"| B
+    B -->|"Live JSON Telemetry"| F["React Threat Dashboard"]
+    F -->|"Score >= 70"| G["Critical Alert & Verification Modal"]
 ```
 
 ---
@@ -138,7 +138,9 @@ flowchart LR
 4. **ML Feature Extraction & Risk Fusion**:
    - The model evaluates acoustic anomalies (`spoof_probability`), compares voiceprints (`speaker_similarity`), analyzes rhythm/pitch (`prosodic_anomaly`), and checks contextual signals.
    - The `HeuristicWeightedFusionEngine` fuses normalized indicators:
-     $$\text{Raw Score} = (P_{\text{spoof}} \times 0.55) + ((1 - S_{\text{speaker}}) \times 0.25) + (A_{\text{prosodic}} \times 0.10) + (C_{\text{context}} \times 0.05)$$
+     ```text
+     Raw Score = (Spoof_Prob * 0.55) + ((1 - Speaker_Sim) * 0.25) + (Prosody_Anomaly * 0.10) + (Context_Risk * 0.05)
+     ```
    - The score is scaled (0–100) and categorized into **SAFE** (0–39), **SUSPICIOUS** (40–69), or **CRITICAL** (70–100).
 5. **Real-Time Client Updates**:
    - The React dashboard receives the telemetry JSON payload and dynamically updates the **Risk Gauge**, **Confidence Meters**, and **Recharts Timeline**.
@@ -290,7 +292,7 @@ All unit tests for the sliding window buffer, risk fusion mathematics, and WebSo
 ### 1. Incoming Call Screen
 *Simulates an incoming cellular / VoIP call with caller metadata, live threat monitoring status, and accept/decline actions.*
 
-```
+```text
 ┌──────────────────────────────────────────────────────┐
 │                    🛡️ VoiceGuard                     │
 │               INCOMING CALL DETECTED                 │
@@ -309,7 +311,7 @@ All unit tests for the sliding window buffer, risk fusion mathematics, and WebSo
 ### 2. Active Call & Live Telemetry Dashboard
 *Continuous real-time speech monitoring featuring the sub-second Risk Gauge, individual threat factors, and dynamic status badge.*
 
-```
+```text
 ┌──────────────────────────────────────────────────────┐
 │ 📞 ACTIVE CALL: 00:01:24            [ 🔴 END CALL ]  │
 │ Caller: Unknown Caller (+91 98XXX XXXXX)             │
@@ -329,7 +331,7 @@ All unit tests for the sliding window buffer, risk fusion mathematics, and WebSo
 ### 3. Real-Time Temporal Risk Timeline
 *Live Recharts dynamic graph tracking risk score fluctuations across the entire duration of the call.*
 
-```
+```text
 Score
 100 ┤
  80 ┤                            .-.  (Spoof Attempt Spike)
@@ -345,7 +347,7 @@ Score
 ### 4. Interactive Step-Up Verification Modal
 *In-call challenge modal enabling dynamic challenge-response passphrases and verification before sensitive transactions.*
 
-```
+```text
 ┌──────────────────────────────────────────────────────┐
 │             🔐 BIOMETRIC VERIFICATION                │
 │                                                      │
