@@ -21,4 +21,42 @@ build/
 
 # Local IDE files
 .vscode/
-.idea/
+.idea/# Exclude planning folder entirely
+planning/
+
+# Heavy Model Weights & Trained Folders
+**/trained_combined_hindi/
+**/trained_combined_bengali/
+**/trained_combined_telugu/
+**/trained_english/
+**/*.bin
+**/*.safetensors
+**/*.pt
+**/*.pth
+
+# Audio Datasets & Arrow Folders
+**/bengali_indicTTS/
+**/hindi_indicTTS/
+**/telugu_indicTTS/
+**/bengali_indicsynth/
+**/hindi_indicsynth/
+**/telugu_indicsynth/
+**/english/
+**/*.wav
+**/*.mp3
+**/*.flac
+
+# Caches & Temporary Files
+**/temp_cache/
+**/temp_files/
+**/lang_id_cache/
+**/lid_cache/
+**/.ipynb_checkpoints/
+**/__pycache__/
+**/calibration_plots/
+
+# Environment & Editor Configs
+**/.env
+**/venv/
+**/.vscode/
+**/run
