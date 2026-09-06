@@ -1,72 +1,80 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-import base64
+from fastapi import FastAPI, Response, Request, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 import numpy as np
 import io
-import soundfile as sf
 import torch
+import soundfile as sf
+from pydub import AudioSegment
 from transformers import pipeline
 from speechbrain.inference.speaker import SpeakerRecognition
 import parselmouth
 
-app = FastAPI(title="VIVID ML Sidecar")
+app = FastAPI(title="VIVID ML Microservice")
 
-# 1. Load the Models into Memory on Startup
-print("Loading Anti-Spoofing Model...")
+# Load models on startup
+print("Loading wav2vec2 anti-spoof model...")
 spoof_pipeline = pipeline("audio-classification", model="Vansh180/deepfake-audio-wav2vec2")
 
-print("Loading Speaker Verification Model...")
+print("Loading ECAPA-TDNN speaker model...")
 speaker_model = SpeakerRecognition.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb", savedir="tmp_model")
 
-# 2. Define the expected request format
-class AudioPayload(BaseModel):
-    audio_base64: str  # The raw audio data converted to text
+class MLResultResponse(BaseModel):
+    spoof_probability: float = Field(..., ge=0.0, le=1.0)
+    speaker_similarity: float = Field(..., ge=0.0, le=1.0)
+    prosodic_anomaly: float = Field(..., ge=0.0, le=1.0)
+    phonetic_evidence: Optional[Dict[str, Any]] = None
+    context_risk: float = Field(default=0.0, ge=0.0, le=1.0)
 
-def decode_audio(base64_str):
-    """Helper function to convert base64 text back into a raw audio numpy array"""
+def convert_webm_opus_to_pcm(webm_bytes: bytes):
+    """Converts raw WebM/Opus bytes from browser MediaRecorder into 16kHz mono float32 PCM array."""
     try:
-        audio_bytes = base64.b64decode(base64_str)
-        data, samplerate = sf.read(io.BytesIO(audio_bytes))
-        # Ensure it's 16kHz mono
-        if len(data.shape) > 1:
-            data = data.mean(axis=1)
-        return data, samplerate
+        # Load WebM/Opus buffer via pydub / ffmpeg
+        audio = AudioSegment.from_file(io.BytesIO(webm_bytes), format="webm")
+        audio = audio.set_frame_rate(16000).set_channels(1)
+        
+        # Export raw PCM samples
+        raw_pcm = np.array(audio.get_array_of_samples(), dtype=np.float32)
+        
+        # Normalize float32 range [-1.0, 1.0]
+        if raw_pcm.size > 0:
+            raw_pcm /= np.max(np.abs(raw_pcm)) + 1e-7
+            
+        return raw_pcm, 16000
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid audio format")
+        raise HTTPException(status_code=400, detail=f"WebM/Opus audio decoding failed: {str(e)}")
 
-# 3. Create the API Endpoints
-@app.post("/ml/spoof")
-async def detect_spoof(payload: AudioPayload):
-    audio_data, _ = decode_audio(payload.audio_base64)
-    # The pipeline expects a float32 numpy array
-    results = spoof_pipeline(audio_data.astype(np.float32))
-    
-    # Extract the probability that the audio is synthetic ("spoof")
-    spoof_prob = next((res['score'] for res in results if res['label'] == 'spoof'), 0.0)
-    return {"spoof_prob": float(spoof_prob)}
+@app.post("/predict", response_model=MLResultResponse)
+async def predict(request: Request):
+    audio_bytes = await request.body()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Empty audio byte buffer")
 
-@app.post("/ml/prosody")
-async def analyze_prosody(payload: AudioPayload):
-    audio_data, sr = decode_audio(payload.audio_base64)
-    
-    # Save temporarily for parselmouth to read
-    sf.write("temp.wav", audio_data, sr)
-    snd = parselmouth.Sound("temp.wav")
-    
-    # Extract pitch (F0) to measure unnatural flatness common in AI voices
+    # 1. Decode WebM/Opus input to float32 PCM
+    pcm_data, sample_rate = convert_webm_opus_to_pcm(audio_bytes)
+
+    # 2. Compute Spoof Probability
+    spoof_results = spoof_pipeline(pcm_data)
+    spoof_prob = float(next((res['score'] for res in spoof_results if res['label'].lower() == 'spoof'), 0.0))
+
+    # 3. Compute Prosodic Anomaly
+    sf.write("temp_window.wav", pcm_data, sample_rate)
+    snd = parselmouth.Sound("temp_window.wav")
     pitch = snd.to_pitch()
     pitch_values = pitch.selected_array['frequency']
-    pitch_values = pitch_values[pitch_values > 0] # Remove unvoiced segments
+    pitch_values = pitch_values[pitch_values > 0]
     
-    # A simple mock anomaly score: highly variance = natural, low variance = synthetic/robotic
     if len(pitch_values) > 0:
-        variance = np.std(pitch_values)
-        anomaly_score = max(0.0, 1.0 - (variance / 50.0)) # Scaled between 0 and 1
+        pitch_variance = np.std(pitch_values)
+        prosodic_score = float(np.clip(1.0 - (pitch_variance / 50.0), 0.0, 1.0))
     else:
-        anomaly_score = 1.0
-        
-    return {"anomaly_score": float(anomaly_score)}
+        prosodic_score = 1.0
 
-@app.get("/health")
-async def health_check():
-    return {"status": "ok", "models_loaded": ["anti_spoof", "speaker", "prosody"]}
+    # 4. Construct MLResult Response
+    return MLResultResponse(
+        spoof_probability=spoof_prob,
+        speaker_similarity=0.85,  # Placeholder until enrolled profile comparison is active
+        prosodic_anomaly=prosodic_score,
+        phonetic_evidence=None,
+        context_risk=0.0
+    )

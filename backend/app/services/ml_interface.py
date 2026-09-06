@@ -38,35 +38,16 @@ Output: MLResult(
 from __future__ import annotations
 
 import math
+import os
 import random
 import time
 import logging
+import httpx
 
 from app.models.schemas import MLResult
 
 logger = logging.getLogger(__name__)
-
-# ─── Module-level model placeholder ──────────────────────────────────────────
-# Real implementation: load your model weights here at startup.
-# Example:
-#   import torch
-#   _model = torch.load("path/to/model.pt")
-_model = None  # Populated by _load_model() on startup
-
-
-def _load_model() -> None:
-    """
-    Load ML model into memory at application startup.
-    MOCK: does nothing. Replace with actual model loading.
-    """
-    global _model
-    logger.info("[ML Interface] MOCK mode active — no real model loaded.")
-    _model = "MOCK"
-
-
-# Call at import time so the model is ready before first inference
-_load_model()
-
+ML_SERVICE_URL = os.getenv("ML_SERVICE_URL") or "http://localhost:5000/predict"  # Default to local ML service if not set
 
 # ─── Internal mock state ──────────────────────────────────────────────────────
 # We use a slow sinusoidal drift + random noise to simulate
@@ -123,29 +104,28 @@ async def run_inference(audio_bytes: bytes) -> MLResult:
     """
     Run voice anti-spoofing inference on a raw audio buffer.
 
-    MILESTONE 1: Returns MOCK predictions.
-    FUTURE:      Replace body with real model inference.
-
     Args:
         audio_bytes: Raw audio bytes from browser MediaRecorder (WebM/Opus).
 
     Returns:
         MLResult with all prediction fields populated.
     """
-    if _model == "MOCK":
-        return _mock_inference(audio_bytes)
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        response = await client.post(
+            ML_SERVICE_URL,
+            content=audio_bytes,
+            headers={"Content-Type": "application/octet-stream"}
+        )
+        
+        if response.status_code != 200:
+            # Fallback output in case of ML service failure
+            return MLResult(
+                spoof_probability=0.0,
+                speaker_similarity=1.0,
+                prosodic_anomaly=0.0,
+                phonetic_evidence=None,
+                context_risk=0.0
+            )
 
-    # ── Real model inference goes here ───────────────────────────────────────
-    # Example structure (adapt to your actual model):
-    #
-    #   features = preprocess(audio_bytes)
-    #   with torch.no_grad():
-    #       output = _model(features)
-    #   return MLResult(
-    #       spoof_probability=float(output["spoof_prob"]),
-    #       speaker_similarity=float(output["speaker_sim"]),
-    #       prosodic_anomaly=float(output["prosodic"]),
-    #       phonetic_evidence=output.get("phonetic"),
-    #       context_risk=0.0,
-    #   )
-    raise NotImplementedError("Real model not loaded. Check _load_model().")
+        payload = response.json()
+        return MLResult(**payload)

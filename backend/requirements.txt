@@ -6,3 +6,4 @@ pydantic>=2.7.0
 pydantic-settings>=2.3.0
 motor>=3.4.0
 pymongo>=4.7.0
+httpx>=0.28.1
